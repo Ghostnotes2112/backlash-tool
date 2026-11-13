@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backlash Tool</title>
+<style>
+  /* Night palette: dark always, so it does not wreck dark adaptation at the mount. */
+  :root { --bg:#0b0b0e; --panel:#15151b; --line:#2a2a34; --ink:#dcdce4; --dim:#8a8a98;
+          --ok:#4ea36a; --warn:#d09a34; --bad:#d0504a; --star:#e8aa4c; --rev:#5f95cc; --acc:#b58ad6; --call:#ff7a59; }
+  body.red { --bg:#0a0000; --panel:#140303; --line:#3a0d0d; --ink:#e05a4a; --dim:#a03a30; --ok:#d04a3a; --warn:#e06a4a;
+             --bad:#ff5040; --star:#ff6a4a; --rev:#c03a2a; --acc:#e0503a; --call:#ff8a6a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; padding:.7rem 1rem; border-bottom:1px solid var(--line); }
+  h1 { font-size:1.05rem; margin:0; letter-spacing:.03em; }
+  nav { display:flex; gap:.25rem; flex-wrap:wrap; }
+  nav button { background:none; border:1px solid transparent; color:var(--dim); padding:.35rem .75rem; border-radius:7px; font:inherit; cursor:pointer; }
+  nav button.on { color:var(--ink); border-color:var(--line); background:var(--panel); }
+  .spacer { flex:1; }
+  .tiny { font-size:.8rem; color:var(--dim); }
+  main { padding:1rem; max-width:1150px; margin:0 auto; }
+  .tab { display:none; } .tab.on { display:grid; gap:.9rem; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:.9rem 1rem; min-width:0; }
+  h2 { font-size:.72rem; letter-spacing:.13em; text-transform:uppercase; color:var(--dim); margin:0 0 .6rem; font-weight:600; }
+  h3 { font-size:1rem; margin:1.2rem 0 .4rem; }
+  .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:.9rem; }
+  label { display:block; font-size:.82rem; color:var(--dim); margin-bottom:.15rem; }
+  input, select { width:100%; background:var(--bg); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:.4rem .5rem; font:inherit; }
+  .btns { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
+  button.go { background:var(--ok); color:#06120a; border:0; border-radius:7px; padding:.55rem 1.1rem; font:600 15px system-ui,sans-serif; cursor:pointer; }
+  button.stop { background:var(--bad); color:#170606; border:0; border-radius:7px; padding:.55rem 1.1rem; font:600 15px system-ui,sans-serif; cursor:pointer; }
+  button.plain { background:none; color:var(--ink); border:1px solid var(--line); border-radius:7px; padding:.5rem .9rem; font:inherit; cursor:pointer; }
+  button:disabled { opacity:.4; cursor:default; }
+  .big { font-size:1.7rem; font-weight:650; font-variant-numeric:tabular-nums; }
+  .huge { font-size:3rem; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.1; }
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)} .dim{color:var(--dim)}
+  svg { display:block; width:100%; height:auto; }
+  .grid line { stroke:var(--line); stroke-width:1; }
+  .lbl { fill:var(--dim); font-size:12px; font-family:system-ui,sans-serif; }
+  .tr-star { fill:none; stroke:var(--star); stroke-width:2.5; stroke-linejoin:round; }
+  .tr-before { fill:none; stroke:var(--dim); stroke-width:2; stroke-dasharray:6 4; }
+  .tr-ideal { fill:none; stroke:var(--dim); stroke-width:1; stroke-dasharray:2 4; }
+  .call circle { fill:var(--call); } .call text { fill:#120400; font:700 12px system-ui,sans-serif; }
+  .callline { stroke:var(--call); stroke-width:1.5; fill:none; }
+  .brk { stroke:var(--call); stroke-width:2; fill:none; }
+  table { border-collapse:collapse; width:100%; font-size:.92rem; }
+  td, th { text-align:left; padding:.3rem .5rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:500; }
+  ol.callouts { margin:.4rem 0 0; padding-left:0; list-style:none; counter-reset:c; }
+  ol.callouts li { counter-increment:c; margin:.45rem 0; padding-left:2.1rem; position:relative; }
+  ol.callouts li::before { content:counter(c); position:absolute; left:0; top:.05rem; width:1.45rem; height:1.45rem; border-radius:50%;
+       background:var(--call); color:#120400; font:700 12px/1.45rem system-ui,sans-serif; text-align:center; }
+  ol.callouts li.l::before { content:attr(data-n); }
+  .note { border-left:3px solid var(--warn); padding:.3rem .8rem; color:var(--ink); background:rgba(208,154,52,.07); border-radius:0 6px 6px 0; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:.9em; }
+  .checks li { margin:.25rem 0; }
+  .pill { display:inline-block; padding:.05rem .5rem; border-radius:99px; border:1px solid var(--line); font-size:.8rem; }
+  @media (max-width:600px) { .huge { font-size:2.2rem; } main { padding:.6rem; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>BACKLASH TOOL</h1>
+  <nav id="nav">
+    <button data-t="measure" class="on">Measure</button>
+    <button data-t="live">Live adjust</button>
+    <button data-t="guide">How to read it</button>
+    <button data-t="about">About</button>
+  </nav>
+  <span class="spacer"></span>
+  <span id="phd" class="tiny">PHD2: checking...</span>
+  <button class="plain" id="redbtn" title="red light for dark adaptation">red</button>
+</header>
+<main>
+
+<!-- ============================================================ MEASURE == -->
+<div class="tab on" id="t-measure">
+  <section>
+    <h2>Setup</h2>
+    <div class="row">
+      <div><label>Axis</label><select id="axis"><option value="dec">Declination (N / S)</option><option value="ra">Right ascension (W / E)</option></select></div>
+      <div><label>Step (ms per pulse)</label><input id="stepMs" type="number" value="750" min="200" max="3000" step="50"></div>
+      <div><label>Steps (preload K; then 2K back, K forward)</label><input id="steps" type="number" value="12" min="4" max="40"></div>
+      <div><label>Mount guide rate (&times; sidereal) <span id="rateAs" class="tiny"></span></label><input id="rateX" type="number" value="0.5" min="0.1" max="2" step="0.05"></div>
+      <div><label>Label (what you just changed)</label><input id="label" maxlength="80" placeholder="e.g. depth screw 1/60 turn in"></div>
+    </div>
+    <ul class="checks tiny">
+      <li>PHD2 open, <b>Tools &rarr; Enable Server</b> ticked, camera and mount connected.</li>
+      <li>PHD2 <b>looping</b> (not guiding) with a clear, unsaturated star near the middle of the frame.</li>
+      <li>Mount <b>tracking</b>. Pointed somewhere comfortable; keep the same pose for every run you compare.</li>
+      <li>For RA, point below about Dec 70&deg; &mdash; near the pole an RA pulse barely moves the star.</li>
+    </ul>
+    <div class="btns">
+      <button class="go" id="mStart">Start measurement</button>
+      <button class="stop" id="mStop" disabled>Stop</button>
+      <button class="plain" id="loopBtn">Start PHD2 looping</button>
+      <span id="mErr" class="bad"></span>
+    </div>
+  </section>
+  <section class="row">
+    <div><h2>State</h2><div id="mState" class="big dim">idle</div><div id="mMsg" class="dim"></div></div>
+    <div><h2>Run</h2><div id="mRun" class="dim">--</div></div>
+    <div><h2>Now</h2><div id="mNow" class="dim">--</div></div>
+  </section>
+  <section>
+    <h2>Star position against commanded pulse time &mdash; the flat stretches at the turns are the slack</h2>
+    <svg id="mChart" viewBox="0 0 900 420" role="img" aria-label="star position against commanded pulse time"></svg>
+  </section>
+  <section>
+    <h2>Result</h2>
+    <div id="mResult" class="dim">appears when the run finishes</div>
+  </section>
+</div>
+
+<!-- =============================================================== LIVE == -->
+<div class="tab" id="t-live">
+  <section>
+    <h2>Live adjust &mdash; turn a screw, see the slack change within a minute</h2>
+    <div class="row">
+      <div><label>Steps per leg (one leg each way, then reverse)</label><input id="legSteps" type="number" value="8" min="4" max="30"></div>
+      <div><label>Step / axis / guide rate</label><div class="tiny" id="liveUses">taken from the Measure tab</div></div>
+      <div><label>Leg length</label><div class="tiny" id="legLen"></div></div>
+    </div>
+    <p class="tiny">Shuttles the axis back and forth: a short leg one way, a short leg back, forever. After <b>every</b> reversal it prints
+      the slack. Adjust between reversals and watch the number. If you knock the mount the star jumps &mdash; that leg is thrown away
+      and it carries on. It stops itself after 45 minutes. When you stop it, it steps back toward where it started.</p>
+    <div class="btns">
+      <button class="go" id="lStart">Start live adjust</button>
+      <button class="stop" id="lStop" disabled>Stop</button>
+      <span id="lErr" class="bad"></span>
+    </div>
+  </section>
+  <section class="row">
+    <div><h2>Last reversal</h2><div id="lLast" class="huge dim">--</div><div id="lLastSub" class="dim"></div></div>
+    <div><h2>Pair average</h2><div id="lPair" class="huge dim">--</div><div class="tiny">last two reversals, opposite directions &mdash; drift cancels</div></div>
+    <div><h2>Effort (optional)</h2><div id="lEff" class="huge dim">--</div><div class="tiny" id="lEffSub">motor duty while moving &mdash; Gemini-II only (About tab)</div></div>
+  </section>
+  <section>
+    <h2>Slack after each reversal</h2>
+    <svg id="lChart" viewBox="0 0 900 360" role="img" aria-label="slack per reversal over time"></svg>
+    <div class="tiny" id="lState"></div>
+  </section>
+</div>
+
+<!-- ============================================================== GUIDE == -->
+<div class="tab" id="t-guide">
+  <section>
+    <h2>What the tool does</h2>
+    <p>A guide pulse turns the motor at the guide rate. If the gears have slack, the first part of every pulse <b>after a change of
+      direction</b> is spent closing the gap, and the star does not move. The tool pulses in small steps, finds the star after each
+      one, and works out how much commanded time the star's movement does <i>not</i> account for. That missing time is the slack.</p>
+    <p class="note">slack (ms) = commanded time of the leg &minus; star travel &divide; guide rate</p>
+    <p>It needs nothing but PHD2. Any mount PHD2 can pulse-guide works &mdash; worm gears, spur gears, belts. The example below is a
+      Losmandy G11 declination axis, measured before and after adjusting its spring-loaded worm block on 4 November 2026.</p>
+  </section>
+
+  <section>
+    <h2>1 &middot; The Measure chart</h2>
+    <svg id="gChart" viewBox="0 0 900 470" role="img" aria-label="annotated example backlash chart"></svg>
+    <ol class="callouts" id="gList">
+      <li><b>Horizontal axis &mdash; commanded time.</b> Net seconds of guide pulse sent: rightward while pulsing North, back
+        leftward while pulsing South. It is what you <i>asked</i> the mount to do.</li>
+      <li><b>Vertical axis &mdash; where the star actually went</b>, in arcseconds along the axis being tested. Drift on the
+        other axis is removed automatically.</li>
+      <li><b>The dotted diagonal &mdash; a perfect mount.</b> No slack: the star would follow the command exactly and the trace
+        would lie on this line going out and coming back.</li>
+      <li><b>Leg 1, the preload.</b> Takes up whatever slack is in the train so that leg 2 starts from a known state. Its slope
+        is the real speed once things are moving.</li>
+      <li><b>The flat stretch after the first turn &mdash; this is the backlash.</b> The command reverses but the star stays put
+        while the motor turns through the gap. Its width, read on the horizontal axis, is the slack in milliseconds.</li>
+      <li><b>The sloped part of leg 2</b> &mdash; the gears are engaged again and the star moves at the guide rate. If this slope is
+        clearly shallower than the dotted line, something in the train is springy (see &ldquo;fitted rate&rdquo;).</li>
+      <li><b>The second turn</b>, back the other way. Same story; the two reversals should agree to within about 10%.</li>
+      <li><b>The gap at the end.</b> The command came back to zero but the star did not &mdash; it is short by about one slack.
+        A loop that is <i>wide</i> means lots of slack; a loop that collapses onto the diagonal means none.</li>
+      <li><b>Before and after.</b> The grey dashed trace is the same test before the adjustment. Its flat stretches are much
+        longer: about 6000 ms then, about 3800 ms after (the two brackets read 4.1 s and 3.5 s).</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>2 &middot; The result table</h2>
+    <table>
+      <tr><th>column</th><th>what it means</th></tr>
+      <tr><td>reversal</td><td>Which turn: North&rarr;South is leg 2, South&rarr;North is leg 3.</td></tr>
+      <tr><td><b>slack</b></td><td><b>The number to track.</b> Milliseconds of pulse lost at that turn, scored at the guide rate
+        you entered. Shown as &ldquo;&ge; whole leg&rdquo; when the star never got going &mdash; then use more steps.</td></tr>
+      <tr><td>on the sky</td><td>The same slack in arcseconds: what a guide correction loses at every reversal.</td></tr>
+      <tr><td>star moved</td><td>How far the star really travelled on that leg.</td></tr>
+      <tr><td>first clear move</td><td>How long into the leg the star was first clearly moving &mdash; a rough cross-check on the slack.</td></tr>
+      <tr><td>fitted rate</td><td>The speed measured once moving (&ldquo;springiness&rdquo;). Expect it within about 10% of the guide
+        rate. It is <i>shown</i>, not used: scoring against a fitted rate turned out to swing results by &plusmn;10% from run to run.</td></tr>
+      <tr><td>average</td><td>Mean of the two reversals. Compare this between adjustments.</td></tr>
+      <tr><td>effort</td><td>Only with a Gemini-II connected: motor duty while moving. If slack goes down but effort climbs, the
+        worm is binding &mdash; you have traded backlash for friction and a stall risk.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>3 &middot; The Live adjust chart</h2>
+    <svg id="gLive" viewBox="0 0 900 360" role="img" aria-label="annotated example live adjust chart"></svg>
+    <ol class="callouts">
+      <li><b>Each dot is one reversal</b>, plotted at the moment it finished. Orange: the turn going North&rarr;South;
+        blue: South&rarr;North.</li>
+      <li><b>The line is the pair average</b> of the last two reversals. It cancels slow drift along the axis (polar alignment),
+        which makes one direction read high and the other low. Watch the line, not single dots.</li>
+      <li><b>An adjustment.</b> You turned a screw here. Within one or two reversals the dots settle at a new level.</li>
+      <li><b>A star jump.</b> Someone touched the mount; that leg is not scored, and the run carries on.</li>
+      <li><b>Effort bars</b> (Gemini-II only) under each reversal. A sudden rise is the warning to back off.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Why not just watch PHD2's guide graph?</h2>
+    <p>It seems as if you could adjust while guiding and watch the declination line. In practice the graph cannot show this:</p>
+    <ul>
+      <li><b>Guiding hides the slack.</b> PHD2 is busy correcting; a reversal shows up as a small overshoot mixed with seeing,
+        not as a number of milliseconds.</li>
+      <li><b>Reversals are rare.</b> A well-aligned mount may reverse declination a few times an hour, so you would wait a long
+        time between readings. Live adjust forces a reversal every 20&ndash;30 seconds.</li>
+      <li><b>Everything is mixed together</b> &mdash; seeing, drift, periodic error, dithers, backlash compensation. The tool moves
+        one axis on purpose and measures only that.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>A good adjusting session</h2>
+    <ol>
+      <li>Run <b>Measure</b> once to get a starting number. Note the pose (where the scope points) &mdash; keep it the same.</li>
+      <li>Switch to <b>Live adjust</b>. Make one small change at a time (a fraction of a turn), then wait for two or three reversals.</li>
+      <li>Watch effort, if you have it, and listen to the mount. Smaller slack with rising effort is a worse mount, not a better one.</li>
+      <li>When the pair average stops improving, back off slightly and run <b>Measure</b> again to record the final number.</li>
+      <li>Check cold: gear trains tighten as they cool. Adjusting warm and running cold is a classic way to get stalls.</li>
+      <li>Then let your guiding software set its backlash compensation from its own test (PHD2 Guiding Assistant).</li>
+    </ol>
+    <p class="note">Run-to-run spread is about &plusmn;10% even when nothing changed. Do not chase a 5% difference; repeat the run.</p>
+  </section>
+</div>
+
+<!-- ============================================================== ABOUT == -->
+<div class="tab" id="t-about">
+  <section>
+    <h2>About</h2>
+    <p>Backlash Tool <span id="ver"></span>. Runs on this computer only (it listens on 127.0.0.1) and talks to PHD2's server on
+      port 4400. It sends guide pulses and nothing else; it refuses to run while PHD2 is guiding.</p>
+    <p>Every run is saved as a CSV in <code id="dataDir"></code>.</p>
+    <p class="tiny">Settings for unusual setups can be given as environment variables: <code>PHD2_HOST</code>, <code>PHD2_PORT</code>,
+      <code>BACKLASH_PORT</code>, <code>BACKLASH_DATA</code>.</p>
+  </section>
+  <section>
+    <h2>Optional: Losmandy Gemini-II motor effort</h2>
+    <p class="tiny">Reads the controller's own Servo feed (<code>/motor.cgx</code>, read only) to show motor duty beside each reversal
+      as a friction warning. Kept in memory only; nothing is saved.</p>
+    <div class="row">
+      <div><label>Gemini address</label><input id="gHost" placeholder="192.168.1.150"></div>
+      <div><label>User</label><input id="gUser" value="admin"></div>
+      <div><label>Password</label><input id="gPass" type="password"></div>
+    </div>
+    <div class="btns" style="margin-top:.6rem"><button class="plain" id="gSave">Connect</button><span id="gMsg" class="tiny"></span></div>
+  </section>
+</div>
+</main>
+
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
+const SIDEREAL = 15.0411;
+
+// ---- tabs, red light ----
+for (const b of document.querySelectorAll("#nav button")) b.onclick = () => {
+  document.querySelectorAll("#nav button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.id === "t-" + b.dataset.t));
+  try { localStorage.setItem("tab", b.dataset.t); } catch {}
+};
+try { const t = location.hash.slice(1) || localStorage.getItem("tab"); if (t) document.querySelector(`#nav button[data-t="${t}"]`)?.click(); } catch {}
+$("redbtn").onclick = () => { document.body.classList.toggle("red"); try { localStorage.setItem("red", document.body.classList.contains("red") ? "1" : ""); } catch {} };
+try { if (localStorage.getItem("red")) document.body.classList.add("red"); } catch {}
+
+// ---- settings ----
+const fields = ["axis", "stepMs", "steps", "rateX", "legSteps"];
+try { const s = JSON.parse(localStorage.getItem("settings") || "{}"); for (const f of fields) if (s[f] != null) $(f).value = s[f]; } catch {}
+function settings() {
+  const s = Object.fromEntries(fields.map((f) => [f, $(f).value])); s.label = $("label").value;
+  try { localStorage.setItem("settings", JSON.stringify(s)); } catch {}
+  return s;
+}
+function showDerived() {
+  const rate = Number($("rateX").value) * SIDEREAL;
+  $("rateAs").textContent = isFinite(rate) ? `= ${rate.toFixed(2)}"/s` : "";
+  const leg = Number($("legSteps").value) * Number($("stepMs").value);
+  $("legLen").textContent = `${leg} ms commanded per leg -- must be longer than the slack (start at about 1.5x your Measure result)`;
+  $("liveUses").textContent = `${$("stepMs").value} ms steps, ${$("axis").value.toUpperCase()}, ${rate.toFixed(2)}"/s`;
+}
+fields.forEach((f) => $(f).addEventListener("input", showDerived)); showDerived();
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json", "X-Backlash": "1" }, body: JSON.stringify(body) } : { cache: "no-store" });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+$("mStart").onclick = async () => { $("mErr").textContent = ""; try { await api("/api/start", { ...settings(), mode: "measure" }); } catch (e) { $("mErr").textContent = e.message; } };
+$("lStart").onclick = async () => { $("lErr").textContent = ""; try { await api("/api/start", { ...settings(), mode: "live" }); } catch (e) { $("lErr").textContent = e.message; } };
+$("mStop").onclick = $("lStop").onclick = () => api("/api/stop", {}).catch(() => {});
+$("loopBtn").onclick = () => api("/api/loop", {}).then(() => { $("mErr").textContent = ""; }).catch((e) => { $("mErr").textContent = e.message; });
+$("gSave").onclick = async () => {
+  try { const j = await api("/api/gemini", { host: $("gHost").value, user: $("gUser").value, pass: $("gPass").value });
+        $("gMsg").textContent = !$("gHost").value ? "off" : j.ok ? `connected -- reading ${j.reading}` : "no reading -- check address and password"; }
+  catch (e) { $("gMsg").textContent = e.message; }
+};
+
+// ---- the trace chart, used live and in the guide ----
+function trace(svg, d, opt = {}) {
+  svg.replaceChildren();
+  const W = 900, H = opt.H ?? 420, L = 64, R = 18, T = 16, B = 46;
+  const span = d.steps * d.stepMs / 1000, rate = d.rate;
+  const all = [...(d.pts ?? []), ...(d.before ?? [])].map((p) => p[1]);
+  const ymin = Math.min(-span * rate * 0.55, ...all) - 3, ymax = Math.max(span * rate * 1.05, ...all) + 3;
+  const x = (s) => L + ((s + span) / (2 * span)) * (W - L - R);
+  const y = (v) => T + (1 - (v - ymin) / (ymax - ymin)) * (H - T - B);
+  const g = el("g", { class: "grid" }); svg.append(g);
+  const yStep = Math.max(5, Math.ceil((ymax - ymin) / 6 / 5) * 5);
+  for (let v = Math.ceil(ymin / yStep) * yStep; v <= ymax; v += yStep) {
+    g.append(el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+    svg.append(el("text", { x: L - 8, y: y(v) + 4, "text-anchor": "end", class: "lbl" }, `${v}"`));
+  }
+  const xStep = span > 12 ? 4 : 2;
+  for (let s = -Math.floor(span / xStep) * xStep; s <= span + 1e-6; s += xStep) {
+    g.append(el("line", { x1: x(s), x2: x(s), y1: T, y2: H - B }));
+    svg.append(el("text", { x: x(s), y: H - B + 18, "text-anchor": "middle", class: "lbl" }, `${s}`));
+  }
+  svg.append(el("text", { x: (L + W - R) / 2, y: H - 8, "text-anchor": "middle", class: "lbl" }, `commanded ${d.fwd ?? "N"} (net seconds of guide pulse)`));
+  svg.append(el("text", { x: 14, y: (T + H - B) / 2, "text-anchor": "middle", class: "lbl", transform: `rotate(-90 14 ${(T + H - B) / 2})` }, "star position along the axis (arcsec)"));
+  const clip = el("clipPath", { id: svg.id + "-c" }); clip.append(el("rect", { x: L, y: T, width: W - L - R, height: H - T - B })); svg.append(clip);
+  svg.append(el("polyline", { "clip-path": `url(#${svg.id}-c)`, class: "tr-ideal", points: `${x(-span)},${y(-span * rate)} ${x(span)},${y(span * rate)}` }));
+  const line = (pts, cls) => { if (pts?.length) svg.append(el("polyline", { class: cls, points: pts.map((p) => `${x(p[0] / 1000).toFixed(1)},${y(p[1]).toFixed(1)}`).join(" ") })); };
+  line(d.before, "tr-before");
+  line(d.pts, "tr-star");
+  const last = d.pts?.at(-1);
+  if (last && !opt.guide) svg.append(el("circle", { cx: x(last[0] / 1000), cy: y(last[1]), r: 5, fill: "var(--star)" }));
+  return { x, y, span, rate, L, R, T, B, W, H };
+}
+function callout(svg, n, cx, cy, lx, ly) {
+  if (lx != null) svg.append(el("line", { x1: cx, y1: cy, x2: lx, y2: ly, class: "callline" }));
+  const g = el("g", { class: "call" }); g.append(el("circle", { cx: lx ?? cx, cy: ly ?? cy, r: 11 }));
+  g.append(el("text", { x: lx ?? cx, y: (ly ?? cy) + 4, "text-anchor": "middle" }, String(n))); svg.append(g);
+}
+
+// ---- the live-adjust chart ----
+function liveChart(svg, revs, opt = {}) {
+  svg.replaceChildren();
+  const W = 900, H = 360, L = 64, R = 18, T = 16, B = 70;
+  if (!revs.length) { svg.append(el("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "lbl" }, "reversals appear here")); return null; }
+  const t0 = revs[0].t, tN = Math.max(revs.at(-1).t, t0 + 60000);
+  const vals = revs.filter((r) => !r.saturated).map((r) => r.lostMs);
+  const ymax = Math.max(1000, ...vals) * 1.15;
+  const x = (t) => L + ((t - t0) / (tN - t0)) * (W - L - R);
+  const y = (v) => T + (1 - v / ymax) * (H - T - B);
+  const g = el("g", { class: "grid" }); svg.append(g);
+  const yStep = ymax > 6000 ? 2000 : ymax > 3000 ? 1000 : 500;
+  for (let v = 0; v <= ymax; v += yStep) { g.append(el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v) })); svg.append(el("text", { x: L - 8, y: y(v) + 4, "text-anchor": "end", class: "lbl" }, `${v}`)); }
+  svg.append(el("text", { x: 14, y: (T + H - B) / 2, "text-anchor": "middle", class: "lbl", transform: `rotate(-90 14 ${(T + H - B) / 2})` }, "slack (ms)"));
+  const mins = (tN - t0) / 60000, mStep = mins > 20 ? 5 : mins > 8 ? 2 : 1;
+  for (let m = 0; m <= mins + 1e-6; m += mStep) svg.append(el("text", { x: x(t0 + m * 60000), y: H - B + 16, "text-anchor": "middle", class: "lbl" }, `${m} min`));
+  // effort bars along the bottom
+  const effs = revs.map((r) => r.effort).filter((e) => e != null);
+  if (effs.length) {
+    const emax = Math.max(...effs, 1);
+    for (const r of revs) if (r.effort != null) {
+      const h = (r.effort / emax) * 28;
+      svg.append(el("rect", { x: x(r.t) - 4, y: H - 8 - h, width: 8, height: h, fill: "var(--acc)", opacity: .8 }));
+    }
+    svg.append(el("text", { x: L - 8, y: H - 12, "text-anchor": "end", class: "lbl" }, "effort"));
+  }
+  const pair = revs.filter((r) => r.pairMs != null);
+  if (pair.length > 1) svg.append(el("polyline", { points: pair.map((r) => `${x(r.t).toFixed(1)},${y(r.pairMs).toFixed(1)}`).join(" "), fill: "none", stroke: "var(--ink)", "stroke-width": 2 }));
+  for (const r of revs) {
+    const v = r.saturated ? ymax / 1.15 : r.lostMs;
+    svg.append(el("circle", { cx: x(r.t), cy: y(v), r: 6, fill: r.to === "S" || r.to === "E" ? "var(--star)" : "var(--rev)", stroke: r.saturated ? "var(--bad)" : "none", "stroke-width": 3 }));
+  }
+  for (const e of opt.events ?? []) {
+    if (e.t < t0) continue;
+    svg.append(el("line", { x1: x(e.t), x2: x(e.t), y1: T, y2: H - B, stroke: "var(--bad)", "stroke-dasharray": "3 3" }));
+  }
+  return { x, y };
+}
+
+// ---- live state ----
+function fmtMs(v) { return v.saturated ? `&ge; ${v.legMs} ms` : `${v.lostMs} ms`; }
+function showRun(d) {
+  const running = d.state === "running";
+  for (const id of ["mStart", "lStart", "loopBtn"]) $(id).disabled = running;
+  $("mStop").disabled = $("lStop").disabled = !running;
+  if (d.state === "none") return;
+  const cls = { running: "warn", done: "ok", failed: "bad", stopped: "dim" }[d.state] ?? "dim";
+  if (d.mode === "measure") {
+    $("mState").textContent = d.state; $("mState").className = `big ${cls}`;
+    $("mMsg").textContent = d.message ?? "";
+    $("mRun").innerHTML = `${esc(d.id)}<br>${esc(d.axis).toUpperCase()} &middot; ${d.steps} &times; ${d.stepMs} ms &middot; ${d.rate.toFixed(2)}"/s` + (d.label ? `<br>${esc(d.label)}` : "");
+    const q = d.points.at(-1);
+    $("mNow").innerHTML = q ? `star ${q.alongArcsec.toFixed(1)}"<br>commanded ${(q.cmdMs / 1000).toFixed(2)} s` : "--";
+    trace($("mChart"), { steps: d.steps, stepMs: d.stepMs, rate: d.rate, fwd: d.fwd, pts: d.points.map((q) => [q.cmdMs, q.alongArcsec]) });
+    const r = d.result;
+    if (r) {
+      const row = (v) => `<tr><td>${esc(v.from)} &rarr; ${esc(v.to)}</td><td class="${v.saturated ? "bad" : ""}" style="font-size:1.25rem;font-weight:650">${fmtMs(v)}</td>` +
+        `<td>${v.saturated ? "whole leg" : v.lostArcsec + '"'}</td><td>${v.travelArcsec}"</td><td>${v.firstMoveAfterMs ?? "--"} ms</td>` +
+        `<td>${v.fittedRate ?? "--"}"/s</td><td>${v.effort ?? "--"}</td></tr>`;
+      $("mResult").innerHTML = `<table><tr><th>reversal</th><th>slack</th><th>on the sky</th><th>star moved</th><th>first clear move</th><th>fitted rate</th><th>effort</th></tr>` +
+        row(r.reversal1) + row(r.reversal2) + `</table>` +
+        `<p class="big">${r.averageMs != null ? `average ${r.averageMs} ms` : "average: one reversal saturated -- re-run with more steps"}</p>` +
+        `<p class="tiny">Scored at the guide rate you entered, ${d.rate.toFixed(2)}"/s. Saved: <code>${esc(d.csv)}</code></p>`;
+    } else $("mResult").textContent = d.state === "running" ? "appears when the run finishes" : "no result -- " + (d.message ?? "");
+  } else {
+    $("lState").innerHTML = `<span class="${cls}">${esc(d.state)}</span> &middot; ${esc(d.message ?? "")}` + (d.events?.length ? ` &middot; ${d.events.length} star jump(s), not scored` : "");
+    const rv = d.reversals ?? [], last = rv.at(-1);
+    if (last) {
+      $("lLast").innerHTML = last.saturated ? `&ge;${last.legMs}` : `${last.lostMs}<span class="tiny"> ms</span>`;
+      $("lLast").className = `huge ${last.saturated ? "bad" : ""}`;
+      $("lLastSub").textContent = `${last.from} -> ${last.to}, reversal ${last.n}` + (last.saturated ? " -- leg too short: use more steps per leg" : "");
+      const p = rv.filter((r) => r.pairMs != null).at(-1);
+      $("lPair").innerHTML = p ? `${p.pairMs}<span class="tiny"> ms</span>` : "--"; $("lPair").className = "huge";
+      $("lEff").textContent = last.effort ?? "--";
+    }
+    liveChart($("lChart"), rv, { events: d.events });
+  }
+}
+
+let lastId = null;
+async function tick() {
+  try {
+    const d = await api("/api/run");
+    if (d.id && d.id !== lastId) { lastId = d.id; document.querySelector(`#nav button[data-t="${d.mode}"]`)?.click(); }
+    showRun(d);
+  } catch { $("phd").textContent = "tool not responding -- is its window still open?"; $("phd").className = "tiny bad"; }
+}
+async function status() {
+  try {
+    const s = await api("/api/status");
+    $("ver").textContent = s.version; $("dataDir").textContent = s.dataDir;
+    const okState = s.phd2 && !s.problems.length;
+    $("phd").textContent = s.phd2 ? `PHD2: ${s.state}${s.scale ? ` · ${s.scale.toFixed(3)}"/px` : ""}${s.problems.length ? " · " + s.problems[0] : ""}` : s.problems[0];
+    $("phd").className = `tiny ${okState ? "ok" : "warn"}`;
+  } catch {}
+}
+setInterval(tick, 1000); tick();
+setInterval(status, 4000); status();
+
+// ---- the illustrated guide, drawn from real data ----
+fetch("/api/sample").then((r) => r.json()).then((S) => {
+  const svg = $("gChart");
+  const after = S.after.map((p) => [p[0], p[1]]), before = S.before.map((p) => [p[0], p[1]]);
+  const k = trace(svg, { steps: S.steps, stepMs: S.stepMs, rate: S.rate, fwd: "N", pts: after, before }, { guide: true, H: 470 });
+  const legOf = (n) => S.after.filter((p) => p[2] === n);
+  const l1 = legOf(1), l2 = legOf(2), l3 = legOf(3);
+  const X = (ms) => k.x(ms / 1000), Y = k.y;
+  // The slack of each reversal, computed exactly as the tool scores it (at the
+  // guide rate), so the bracket's width IS the number the text talks about.
+  const turn = l1.at(-1), turn2 = l2.at(-1);
+  const lost = (legPts, from, sign) => legPts.length * S.stepMs - ((legPts.at(-1)[1] - from[1]) * sign) / (S.rate / 1000);
+  const lost2 = lost(l2, turn, -1), lost3 = lost(l3, turn2, +1);
+  callout(svg, 1, X(S.steps * S.stepMs * 0.55), k.H - k.B + 4, X(S.steps * S.stepMs * 0.55), k.H - k.B - 22);
+  callout(svg, 2, k.L, Y(0), k.L + 26, Y(0) - 32);
+  const dx = S.steps * S.stepMs * 0.3;                         // a clear stretch of the diagonal
+  callout(svg, 3, X(dx), Y(dx * S.rate / 1000), X(dx) - 34, Y(dx * S.rate / 1000) - 34);
+  const mid1 = l1[Math.floor(l1.length * 0.6)]; callout(svg, 4, X(mid1[0]), Y(mid1[1]), X(mid1[0]) + 34, Y(mid1[1]) + 30);
+  const bx1 = X(turn[0]), bx2 = X(turn[0] - lost2), by = Y(Math.max(...l2.map((p) => p[1]), turn[1])) - 16;
+  svg.append(el("path", { class: "brk", d: `M${bx1},${by + 8} V${by} H${bx2} V${by + 8}` }));
+  svg.append(el("text", { x: (bx1 + bx2) / 2 + 18, y: by - 22, class: "lbl", fill: "var(--call)" }, `slack ${(lost2 / 1000).toFixed(1)} s`));
+  callout(svg, 5, (bx1 + bx2) / 2, by, (bx1 + bx2) / 2, by - 26);
+  const mid2 = l2[Math.floor(l2.length * 0.7)]; callout(svg, 6, X(mid2[0]), Y(mid2[1]), X(mid2[0]) - 30, Y(mid2[1]) - 30);
+  const cx3a = X(turn2[0]), cx3b = X(turn2[0] + lost3), cy3 = Y(Math.min(...l3.map((p) => p[1]), turn2[1])) + 16;
+  svg.append(el("path", { class: "brk", d: `M${cx3a},${cy3 - 8} V${cy3} H${cx3b} V${cy3 - 8}` }));
+  svg.append(el("text", { x: cx3b + 6, y: cy3 + 4, class: "lbl", fill: "var(--call)" }, `slack ${(lost3 / 1000).toFixed(1)} s`));
+  callout(svg, 7, (cx3a + cx3b) / 2, cy3, (cx3a + cx3b) / 2, cy3 + 26);
+  const end = l3.at(-1); svg.append(el("line", { x1: X(0), y1: Y(0), x2: X(end[0]), y2: Y(end[1]), class: "callline", "stroke-dasharray": "4 3" }));
+  callout(svg, 8, X(end[0]), Y(end[1]), X(end[0]) + 30, Y(end[1]) + 30);
+  const b2 = S.before.filter((p) => p[2] === 2), bm = b2[Math.floor(b2.length * 0.6)];
+  callout(svg, 9, X(bm[0]), Y(bm[1]), X(bm[0]) - 30, Y(bm[1]) - 34);
+
+  // example live chart: synthetic, clearly so -- 12 minutes, an adjustment at 5 min, a knock at 9 min
+  const t0 = Date.now(), revs = [];
+  let lvl = 5200;
+  for (let i = 0; i < 28; i++) {
+    const t = t0 + i * 26000;
+    if (i === 11) lvl = 3800;
+    const drift = i % 2 ? 260 : -260, noise = ((i * 7919) % 11 - 5) * 40;
+    const to = i % 2 ? "N" : "S";
+    if (i === 20) continue;                                     // the knocked leg is not scored
+    const lost = Math.round(lvl + drift + noise);
+    const prev = revs.at(-1);
+    revs.push({ t, to, lostMs: lost, saturated: false, effort: i < 11 ? 9 + (i % 3) * 0.4 : 5.2 + (i % 3) * 0.3,
+                pairMs: prev && prev.to !== to ? Math.round((prev.lostMs + lost) / 2) : null });
+  }
+  const lk = liveChart($("gLive"), revs, { events: [{ t: t0 + 20 * 26000 }] });
+  const r3 = revs[2], r6 = revs.find((r) => r.pairMs != null && r.t > t0 + 5 * 26000);
+  callout($("gLive"), 1, lk.x(r3.t), lk.y(r3.lostMs), lk.x(r3.t) + 24, lk.y(r3.lostMs) - 30);
+  callout($("gLive"), 2, lk.x(r6.t), lk.y(r6.pairMs), lk.x(r6.t) + 10, lk.y(r6.pairMs) + 40);
+  callout($("gLive"), 3, lk.x(t0 + 10.5 * 26000), lk.y(4600), lk.x(t0 + 10.5 * 26000), lk.y(4600) - 70);
+  callout($("gLive"), 4, lk.x(t0 + 20 * 26000), 30, lk.x(t0 + 20 * 26000) + 26, 30);
+  callout($("gLive"), 5, lk.x(revs[4].t), 345, lk.x(revs[4].t) + 30, 318);
+  $("gLive").append(el("text", { x: 880, y: 30, "text-anchor": "end", class: "lbl" }, "illustration -- not a real run"));
+});
+</script>
+</body>
+</html>
